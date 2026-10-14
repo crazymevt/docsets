@@ -28,6 +28,13 @@
   (declare (ignore count))
   `(let ((,var (make-widget))) ,@body))
 
+(defpackage #:docsets-test-gadgets
+  (:use #:cl)
+  (:import-from #:docsets-test-widgets #:frob #:make-widget)
+  (:export #:frob #:make-widget #:polish))
+
+(defun docsets-test-gadgets:polish (gadget) "Polishes GADGET." gadget)
+
 (in-package #:docsets/tests)
 
 (define-test docsets/tests)
@@ -119,3 +126,32 @@
                        (:title "Other macros" :children ((:title "with-widget" :entry "macro/with-widget"))))
                (docset:docset-toc d)))
       (uiop:delete-directory-tree dir :validate t :if-does-not-exist :ignore))))
+
+(defun generate-ids (library-form)
+  (eval library-form)
+  (let ((dir (merge-pathnames (format nil "docsets-test-~D/" (random 1000000 (make-random-state t)))
+                              (uiop:temporary-directory))))
+    (unwind-protect
+         (let ((d (docset:open-docset (docsets:generate (second library-form) :output-directory dir))))
+           (values (mapcar #'docset:record-id (docset:docset-index d)) (docset:docset-toc d)))
+      (uiop:delete-directory-tree dir :validate t :if-does-not-exist :ignore))))
+
+(define-test re-exports
+  :parent docsets/tests
+  ;; Gadgets re-exports two widget functions: documented once, under widgets
+  (is equal '("variable/*widgets*" "function/frob" "function/make-widget" "class/widget" "macro/with-widget"
+              "function/gadgets:polish")
+      (generate-ids '(docsets:define-library "docsets-test-both" :system "docsets/tests"
+                      :packages ("DOCSETS-TEST-WIDGETS" ("DOCSETS-TEST-GADGETS" :prefix "gadgets:"))))))
+
+(define-test group-by-home-package
+  :parent docsets/tests
+  ;; Alone, gadgets documents what it re-exports, grouped by where it comes from
+  (multiple-value-bind (ids toc)
+      (generate-ids '(docsets:define-library "docsets-test-gadgets" :system "docsets/tests"
+                      :packages (("DOCSETS-TEST-GADGETS" :group-by-home-package t))))
+    (is equal '("function/frob" "function/make-widget" "function/polish") ids)
+    (is equal '((:title "docsets-test-gadgets" :children ((:title "Functions" :children ((:title "polish" :entry "function/polish")))))
+                (:title "docsets-test-widgets" :children ((:title "Functions" :children ((:title "frob" :entry "function/frob")
+                                                                                         (:title "make-widget" :entry "function/make-widget"))))))
+        toc)))

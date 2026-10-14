@@ -35,7 +35,13 @@ make docset LIBRARY=bordeaux-threads
 ```
 
 It loads the library with Quicklisp, writes the docset, and checks it.
-`make all` does every library in `libraries/`; `make list` names them.
+`make all` does every library in `libraries/`; `make list` names them:
+
+| Library | Entries from |
+| --- | --- |
+| `bordeaux-threads` | Its documentation site's pages (APIv2) and docstrings (APIv1) |
+| `alexandria` | Docstrings; also found as `a:`, the usual local nickname |
+| `uiop` | Docstrings, with the contents grouped by UIOP's subpackages (`uiop/os`, `uiop/pathname`, ...) |
 
 Any library works, even with no file in `libraries/`. It's documented from
 the docstrings and lambda lists of the external symbols of the package with
@@ -78,6 +84,11 @@ Per package:
 - `:pages` is a directory of pages, relative to the library's system.
 - `:prefix` tells apart entries of packages that export the same names.
 - `:see-also` links each entry to the same name in another package.
+- `:group-by-home-package` groups the contents by the package each symbol
+  comes from, for a package that re-exports others, as UIOP does.
+
+A symbol that one of the library's packages re-exports from another is
+documented once, under the package it comes from.
 
 The system defaults to the library's name; pass `:system` if it differs.
 

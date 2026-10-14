@@ -17,12 +17,16 @@
 
 (defmacro define-library (id &key system title subtitle source license attribution packages)
   "Defines how to document the library ID. PACKAGES lists the packages to
-document, each a name or (name &key nicknames prefix pages toc-title see-also):
+document, each a name or (name &key nicknames prefix pages toc-title see-also
+group-by-home-package):
 NICKNAMES are other names code uses for it; PREFIX starts its entries' names
 in ids, to tell apart packages exporting the same names; PAGES is a directory
 of HyperSpec-style Markdown pages, relative to the system's; TOC-TITLE heads
 its part of the contents; SEE-ALSO names a package whose entries of the same
-name each entry links to."
+name each entry links to; GROUP-BY-HOME-PACKAGE groups the contents by the
+package each symbol comes from, for a package that re-exports others (UIOP).
+A symbol another of the packages exports from its own home is documented
+there, not again."
   `(setf (gethash ,id *libraries*)
          (make-library :id ,id :system ,(or system id) :title ,(or title id) :subtitle ,subtitle
                        :source ,source :license ,license :attribution ,attribution
@@ -56,7 +60,8 @@ the same name from docstrings."
 ;;; Planning: which entries a package has, before any is written
 
 (defstruct item
-  id names kind kind-name source (weight 0) dictionary)
+  id names kind kind-name source (weight 0) dictionary
+  home)                                 ; a symbol's home package name, for :group-by-home-package
 
 (defun prefixed (prefix name) (format nil "~@[~a~]~a" prefix name))
 
@@ -95,10 +100,14 @@ other page."
                        (setf (gethash slug *page-links*) (item-id (first items)))))))))))
     (sort items #'< :key #'item-weight)))
 
-(defun symbol-items (package prefix covered)
-  "The items of PACKAGE's external symbols whose names COVERED doesn't hold."
-  (let ((symbols '()))
-    (do-external-symbols (s package) (push s symbols))
+(defun symbol-items (package prefix covered &optional skip-packages)
+  "The items of PACKAGE's external symbols whose names COVERED doesn't hold.
+Symbols re-exported from COMMON-LISP or from SKIP-PACKAGES (the library's
+other documented packages, which have their own entries) are left out."
+  (let ((symbols '())
+        (skip (cons (find-package '#:common-lisp) (mapcar #'find-package skip-packages))))
+    (do-external-symbols (s package)
+      (unless (member (symbol-package s) skip) (push s symbols)))
     (loop for symbol in (sort symbols #'string< :key #'symbol-name)
           for name = (string-downcase (symbol-name symbol))
           unless (gethash name covered)
@@ -107,6 +116,7 @@ other page."
                                             :names (list name)
                                             :kind (getf definition :kind)
                                             :kind-name (getf definition :kind-name)
+                                            :home (package-name (symbol-package symbol))
                                             :source (list :symbol symbol definition))))))
 
 ;;; Writing a package's entries
@@ -151,14 +161,32 @@ other page."
 
 (defun item-title (item) (format nil "~{~a~^, ~}" (item-names item)))
 
-(defun package-toc (items)
+(defun kind-nodes (items &optional other)
+  "Nodes for ITEMS by kind, in the order the kinds first appear. With OTHER,
+titled as the entries not in a dictionary (\"Other functions\")."
+  (let ((kinds '()))
+    (dolist (i items) (pushnew (item-kind-name i) kinds :test #'string=))
+    (loop for kind in (reverse kinds)
+          collect (list :title (if other (format nil "Other ~(~a~)" (plural kind)) (plural kind))
+                        :children (loop for i in items
+                                        when (string= (item-kind-name i) kind)
+                                          collect (list :title (item-title i) :entry (item-id i)))))))
+
+(defun home-package-nodes (items)
+  "Nodes for ITEMS by the package each symbol comes from, each by kind."
+  (let ((homes '()))
+    (dolist (i items) (pushnew (item-home i) homes :test #'equal))
+    (loop for home in (sort homes #'string<)
+          collect (list :title (string-downcase home)
+                        :children (kind-nodes (remove home items :key #'item-home :test-not #'equal))))))
+
+(defun package-toc (items &key group-by-home-package)
   "Contents of a package: its overview and dictionaries (each with its pages)
-when it has pages, then its other entries by kind."
+when it has pages, then its other entries by kind, or by the package they come
+from and then by kind."
   (let ((dictionaries (remove-if-not (lambda (i) (eq (car (item-source i)) :dictionary)) items))
         (overview (find "Overview" items :key #'item-kind-name :test #'string=))
-        (rest (remove-if (lambda (i) (or (item-dictionary i) (eq (item-kind i) :page))) items))
-        (kinds '()))
-    (dolist (i rest) (pushnew (item-kind-name i) kinds :test #'string=))
+        (rest (remove-if (lambda (i) (or (item-dictionary i) (eq (item-kind i) :page))) items)))
     (append
      (when overview (list (list :title "Overview" :entry (item-id overview))))
      (loop for d in dictionaries
@@ -167,11 +195,9 @@ when it has pages, then its other entries by kind."
                          :children (loop for i in items
                                          when (equal (item-dictionary i) dir)
                                            collect (list :title (item-title i) :entry (item-id i)))))
-     (loop for kind in (reverse kinds)
-           collect (list :title (if dictionaries (format nil "Other ~(~a~)" (plural kind)) (plural kind))
-                         :children (loop for i in rest
-                                         when (string= (item-kind-name i) kind)
-                                           collect (list :title (item-title i) :entry (item-id i))))))))
+     (if group-by-home-package
+         (home-package-nodes rest)
+         (kind-nodes rest dictionaries)))))
 
 ;;; Generating
 
@@ -213,7 +239,9 @@ by default ~/.local/share/docsets/ID/. Returns the directory."
           (dolist (i items)
             (unless (eq (item-kind i) :page)
               (dolist (n (item-names i)) (setf (gethash n covered) t))))
-          (setf items (append items (symbol-items package prefix covered)))
+          (setf items (append items (symbol-items package prefix covered
+                                                  (remove name (mapcar #'package-spec-name specs)
+                                                          :test #'string=))))
           (dolist (i items)
             (unless (eq (item-kind i) :page)
               (dolist (n (item-names i))
@@ -229,7 +257,8 @@ by default ~/.local/share/docsets/ID/. Returns the directory."
                                                                  see-also)))))))
                 (push entry entries))))
           (setf (gethash name package-links) *link-names*)
-          (let ((nodes (package-toc items)))
+          (let ((nodes (package-toc items :group-by-home-package
+                                    (package-option spec :group-by-home-package))))
             (if (rest specs)
                 (push (list :title (or (package-option spec :toc-title) name) :children nodes) toc)
                 (setf toc nodes)))))
