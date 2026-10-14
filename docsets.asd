@@ -1,7 +1,7 @@
 ;;;; docsets.asd
 
 (defsystem "docsets"
-  :description "Writes docsets of Lisp libraries from their docstrings, lambda lists and documentation pages."
+  :description "Writes docsets of Lisp libraries from their docstrings, lambda lists, documentation pages and Texinfo manuals."
   :author "Jessie Hughart"
   :license "MIT"
   :version "0.1.0"
@@ -12,11 +12,12 @@
                              (:file "text")
                              (:file "symbols")
                              (:file "markdown")
-                             (:file "generate"))))
+                             (:file "generate")
+                             (:file "texinfo"))))
   :in-order-to ((test-op (test-op "docsets/tests"))))
 
 (defsystem "docsets/tests"
-  :description "Tests of the docstring and Markdown readers, and of a generated docset."
+  :description "Tests of the docstring, Markdown and Texinfo readers, and of a generated docset."
   :author "Jessie Hughart"
   :license "MIT"
   :depends-on ("docsets" "parachute")

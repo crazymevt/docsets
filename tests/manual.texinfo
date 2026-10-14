@@ -1,0 +1,113 @@
+\input texinfo   @c A manual of the test package, laid out as CFFI's is
+@setfilename widgets.info
+@settitle Widgets Manual
+
+@macro Macro {args}
+@defmac \args\
+@end defmac
+@end macro
+
+@macro wd
+@acronym{WD}
+@end macro
+
+@iftex
+@alias res = r
+@end iftex
+@ifnottex
+@alias res = result
+@end ifnottex
+@alias seealso = ref
+
+@titlepage
+@title Widgets
+@end titlepage
+
+@node Top, Widgets, (dir), (dir)
+@top Widgets
+
+@menu
+* Widgets::
+@end menu
+
+@node Widgets, Making widgets, Top, Top
+@chapter Widgets
+
+@wd{} widgets are things to frob.@footnote{Gently.} @xref{Making widgets},
+to start; Lu@'{@dotless{i}}s says ``frob them''.
+
+@itemize
+@item
+One.
+@item Two.
+@end itemize
+
+@menu
+* Making widgets::   How.
+
+Dictionary
+
+* with-widget::
+* make-widget::
+@end menu
+
+@node Making widgets, with-widget, Widgets, Widgets
+@section Making widgets
+
+@lisp
+(make-widget) @res{} #<WIDGET>
+@end lisp
+
+@deftp {Class} widget
+A thing to frob, from @code{make-widget}.
+@end deftp
+
+@c ===================================================================
+@node with-widget, make-widget, Making widgets, Widgets
+@heading with-widget
+@subheading Syntax
+@Macro{with-widget (var &key count) &body body @res{} result}
+
+@subheading Arguments and Values
+
+@table @var
+@item var
+A symbol.
+
+@item count
+@itemx body
+Forms, @c not evaluated
+evaluated.
+@end table
+
+@subheading Description
+Binds @var{var} to a widget from @code{make-widget} around
+@code{body}. @*
+It is pushed on @code{*widgets*}.
+
+@subheading Examples
+@lisp
+(with-widget (w) w) @res{} #<WIDGET>
+@end lisp
+
+@subheading See Also
+@seealso{make-widget}
+
+@node make-widget, Index, with-widget, Widgets
+@heading make-widget
+@subheading Syntax
+@deffn {Function} make-widget @res{} widget
+@end deffn
+
+@subheading Description
+
+@subheading Examples
+@lisp
+(make-widget)
+@end lisp
+
+@node Index, , make-widget, Top
+@unnumbered Index
+@printindex cp
+
+@bye

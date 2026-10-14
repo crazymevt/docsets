@@ -2,20 +2,20 @@
 ;;;;
 ;;;; A library is documented package by package. A package's entries come
 ;;;; from its documentation pages when it has HyperSpec-style ones (see
-;;;; markdown.lisp), and from the docstrings of its external symbols for
-;;;; anything the pages don't cover.
+;;;; markdown.lisp) or a Texinfo manual (see texinfo.lisp), and from the
+;;;; docstrings of its external symbols for anything those don't cover.
 
 (in-package #:docsets)
 
 ;;; Libraries
 
 (defstruct library
-  id system title subtitle source license attribution packages readme)
+  id system title subtitle source license attribution packages readme texinfo)
 
 (defvar *libraries* (make-hash-table :test 'equal)
   "Library id -> its LIBRARY, as libraries/*.lisp define them.")
 
-(defmacro define-library (id &key system title subtitle source license attribution packages readme)
+(defmacro define-library (id &key system title subtitle source license attribution packages readme texinfo)
   "Defines how to document the library ID. PACKAGES lists the packages to
 document, each a name or (name &key nicknames prefix pages toc-title see-also
 group-by-home-package):
@@ -28,11 +28,14 @@ package each symbol comes from, for a package that re-exports others (UIOP).
 A symbol another of the packages exports from its own home is documented
 there, not again. README, a Markdown file relative to the system's directory,
 becomes an Overview page at the top of the contents, for a library whose
-README documents more than its docstrings do."
+README documents more than its docstrings do. TEXINFO, a Texinfo manual
+relative to the system's directory, documents the first of the packages: its
+definitions' nodes are their entries, and its other nodes pages in the
+contents, as its chapters and sections."
   `(setf (gethash ,id *libraries*)
          (make-library :id ,id :system ,(or system id) :title ,(or title id) :subtitle ,subtitle
                        :source ,source :license ,license :attribution ,attribution
-                       :packages ',packages :readme ,readme)))
+                       :packages ',packages :readme ,readme :texinfo ,texinfo)))
 
 (defun libraries-directory ()
   (asdf:system-relative-pathname "docsets" "libraries/"))
@@ -63,7 +66,8 @@ the same name from docstrings."
 
 (defstruct item
   id names kind kind-name source (weight 0) dictionary
-  home)                                 ; a symbol's home package name, for :group-by-home-package
+  home                                  ; a symbol's home package name, for :group-by-home-package
+  parent)                               ; the id of the page it comes under, in a manual's contents
 
 (defun prefixed (prefix name) (format nil "~@[~a~]~a" prefix name))
 
@@ -136,6 +140,7 @@ other documented packages, which have their own entries) are left out."
                                     (list :sections (list (cons "" blocks)))))))
                  (page-entry (item-id item) (item-kind item) (item-kind-name item) (item-names item)
                              package-name (first args))))
+      (:texinfo (texinfo-entry item package-name))
       (:dictionary
        (let ((*self-id* (item-id item)) (*params* '()))
          (list :entry (item-id item) :names (item-names item) :kind :page :kind-name "Dictionary"
@@ -182,13 +187,22 @@ titled as the entries not in a dictionary (\"Other functions\")."
           collect (list :title (string-downcase home)
                         :children (kind-nodes (remove home items :key #'item-home :test-not #'equal))))))
 
+(defun manual-nodes (items parent)
+  "Nodes for the ITEMS of a manual under the page PARENT (nil for its chapters)."
+  (loop for i in items
+        when (equal (item-parent i) parent)
+          collect (let ((children (manual-nodes items (item-id i))))
+                    (list* :title (item-title i) :entry (item-id i)
+                           (when children (list :children children))))))
+
 (defun package-toc (items &key group-by-home-package)
   "Contents of a package: its overview and dictionaries (each with its pages)
-when it has pages, then its other entries by kind, or by the package they come
-from and then by kind."
-  (let ((dictionaries (remove-if-not (lambda (i) (eq (car (item-source i)) :dictionary)) items))
-        (overview (find "Overview" items :key #'item-kind-name :test #'string=))
-        (rest (remove-if (lambda (i) (or (item-dictionary i) (eq (item-kind i) :page))) items)))
+when it has pages, and its manual's chapters when it has one, then its other
+entries by kind, or by the package they come from and then by kind."
+  (let* ((dictionaries (remove-if-not (lambda (i) (eq (car (item-source i)) :dictionary)) items))
+         (manual (remove-if-not (lambda (i) (eq (car (item-source i)) :texinfo)) items))
+         (overview (find "Overview" items :key #'item-kind-name :test #'string=))
+         (rest (remove-if (lambda (i) (or (item-dictionary i) (item-parent i) (eq (item-kind i) :page))) items)))
     (append
      (when overview (list (list :title "Overview" :entry (item-id overview))))
      (loop for d in dictionaries
@@ -197,9 +211,10 @@ from and then by kind."
                          :children (loop for i in items
                                          when (equal (item-dictionary i) dir)
                                            collect (list :title (item-title i) :entry (item-id i)))))
+     (manual-nodes manual nil)
      (if group-by-home-package
          (home-package-nodes rest)
-         (kind-nodes rest dictionaries)))))
+         (kind-nodes rest (or dictionaries manual))))))
 
 ;;; Generating
 
@@ -229,7 +244,10 @@ by default ~/.local/share/docsets/ID/. Returns the directory."
                (*link-names* (make-hash-table :test 'equal))
                (*page-links* (make-hash-table :test 'equal))
                (covered (make-hash-table :test 'equal))
-               (items (when pages (page-items (merge-pathnames pages source-directory) prefix))))
+               (items (append (when pages (page-items (merge-pathnames pages source-directory) prefix))
+                              (when (and (library-texinfo library) (eq spec (first specs)))
+                                (texinfo-items (merge-pathnames (library-texinfo library) source-directory)
+                                               prefix package)))))
           ;; Records name the package as Lisp does; the others are nicknames
           (push (package-name package) packages)
           (let ((others (remove (package-name package)

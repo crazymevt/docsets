@@ -46,7 +46,7 @@ It loads the library with Quicklisp, writes the docset, and checks it.
 | `jzon` | Docstrings, and its README (its manual) as the overview; also found as `jzon:` |
 | `dexador` | Its README as the overview, which documents the request functions; docstrings, which few symbols have |
 | `parachute` | Docstrings, and its README (a guide to writing tests) as the overview |
-| `cffi` | Docstrings, which a third of its symbols lack, and its README. Its full reference is a Texinfo manual this doesn't read yet |
+| `cffi` | Its Texinfo manual: a full entry per definition, and its tutorial and chapters as pages; docstrings for what it leaves out, and its README as the overview |
 | `cl-ppcre` | Docstrings, complete; also found as `ppcre:` |
 
 Any library works, even with no file in `libraries/`. It's documented from
@@ -69,6 +69,12 @@ make docset LIBRARY=alexandria
   `#### Syntax:`, `#### Arguments and values:`, `#### Description:` and so on.
   These are preferred over docstrings. Each subdirectory's `_index.md` is a
   dictionary in the contents; the top `_index.md` is the overview.
+- **A Texinfo manual**, when a library's reference is laid out the same way:
+  a node per definition (`@deffn` and its kin, or macros expanding to them)
+  with `@subheading Syntax`, `Arguments and Values`, `Description` and so
+  on. These are preferred over docstrings too, which fill in a Description
+  the manual leaves empty. Every other node is a page, nested in the contents
+  as the manual's chapters and sections are.
 
 ## Adding a library
 
@@ -96,7 +102,8 @@ Per package:
 For the library, `:readme` names a Markdown file (relative to the system's
 directory) to show as an Overview page, for a library whose README documents
 more than its docstrings do. Its first `#` heading is left out when it names
-the library, as a title does.
+the library, as a title does. `:texinfo` names a Texinfo manual (relative to
+the system's directory too) documenting the first of the packages.
 
 A symbol that one of the library's packages re-exports from another is
 documented once, under the package it comes from.

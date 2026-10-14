@@ -1,5 +1,6 @@
-;;;; docsets.lisp — the docstring and Markdown readers, and a whole docset
-;;;; written from the test package below and the pages in tests/pages/.
+;;;; docsets.lisp — the docstring, Markdown and Texinfo readers, and a whole docset
+;;;; written from the test package below, the pages in tests/pages/ and the
+;;;; manual in tests/manual.texinfo.
 
 (defpackage #:docsets/tests
   (:use #:cl #:parachute))
@@ -181,3 +182,71 @@
   (let ((docsets::*params* '("in")) (docsets::*link-names* (make-hash-table :test 'equal)))
     (is equal '((:p "Reads " (:param "in") ", or a " (:code "span") "; don't use " (:code "quotes") " here."))
         (docsets:docstring-blocks "Reads `in', or a `span'; don't use `quotes` here."))))
+
+(define-test texinfo
+  :parent docsets/tests
+  (let ((docsets::*params* '("x"))
+        (docsets::*link-names* (make-hash-table :test 'equal))
+        (docsets::*node-links* (make-hash-table :test 'equalp)))
+    (setf (gethash "frob" docsets::*link-names*) "function/frob"
+          (gethash "Frobbing" docsets::*node-links*) "page/frobbing")
+    (is equal '((:param "x") " is " (:ref "function/frob" "frob") "ed, " (:code "(f " (:param "y") ")") " ⇒ " (:i "it"))
+        (docsets::texinfo-inlines "@var{x} is   @code{frob}ed, @code{(f @var{y})} @result{} @emph{it}"))
+    (is equal '("See " (:ref "page/frobbing" "how") "; " (:link "http://x" "X") " “quoted” @{}")
+        (docsets::texinfo-inlines "@xref{Frobbing,,how}; @uref{http://x,X} ``quoted'' @@@{@}"))
+    (is equal '((:p "a") (:p "b") (:code-block "lisp" "(f) ⇒ 1"))
+        (docsets::texinfo-blocks '("a @*" "b" "" "@lisp" "(f) @result{} 1" "@end lisp")))
+    (is equal '((:list (:item (:p "One.")) (:item (:p "Two."))))
+        (docsets::texinfo-blocks '("@itemize" "@item" "One." "@item Two." "@end itemize")))
+    (is equal '(:syntax :kind :standard-generic-function :name ("frob") :args ("x " (:code "&key") " " "y") :values ("z"))
+        (docsets::definition-syntax "deffn" "{Generic Function} frob x &key y @result{} z")))
+  (eval '(docsets:define-library "docsets-test-texinfo"
+          :system "docsets/tests" :title "Widgets"
+          :texinfo "tests/manual.texinfo"
+          :packages ("DOCSETS-TEST-WIDGETS")))
+  (let ((dir (merge-pathnames (format nil "docsets-test-~D/" (random 1000000 (make-random-state t)))
+                              (uiop:temporary-directory))))
+    (unwind-protect
+         (let* ((dir (docsets:generate "docsets-test-texinfo" :output-directory dir))
+                (d (docset:open-docset dir))
+                (chapter (docset:docset-entry d "page/widgets"))
+                (with-widget (docset:docset-entry d "macro/with-widget"))
+                (make-widget (docset:docset-entry d "function/make-widget")))
+           (is = 0 (docset:check-docset dir :stream (make-broadcast-stream)))
+           ;; Top and the index are left out; the class is documented by its @deftp
+           (is equal '("page/widgets" "page/making-widgets" "class/widget" "macro/with-widget" "function/make-widget"
+                       "variable/*widgets*" "function/frob")
+               (mapcar #'docset:record-id (docset:docset-index d)))
+           (is equal '((:title "Widgets" :entry "page/widgets"
+                        :children ((:title "Making widgets" :entry "page/making-widgets"
+                                    :children ((:title "widget" :entry "class/widget")))
+                                   (:title "with-widget" :entry "macro/with-widget")
+                                   (:title "make-widget" :entry "function/make-widget")))
+                       (:title "Other variables" :children ((:title "*widgets*" :entry "variable/*widgets*")))
+                       (:title "Other functions" :children ((:title "frob" :entry "function/frob"))))
+               (docset:docset-toc d))
+           ;; A chapter: macros expanded, footnotes as notes, @xref and @menu as links
+           (let ((blocks (docset:entry-section chapter "")))
+             (is equal '(:p "WD widgets are things to frob." (:sup "1") " See " (:ref "page/making-widgets" "Making widgets")
+                         ", to start; Luís says “frob them”.")
+                 (first blocks))
+             (is equal '(:list (:item (:p (:ref "page/making-widgets" "Making widgets") " — How.")))
+                 (third blocks))
+             (is equal '(:heading 3 "Dictionary") (fourth blocks))
+             (is equal '(:p (:sup "1") " " "Gently.") (car (last blocks))))
+           ;; A definition, as a Markdown page's
+           (is equal '((:syntax :kind :macro :name ("with-widget") :args ("(var " (:code "&key") " " "count) " (:code "&body") " " "body")
+                        :values ("result")))
+               (docset:entry-section with-widget "Syntax"))
+           (is equal '((:p (:param "var") "—a symbol.") (:p (:param "count") ", " (:param "body") "—forms, evaluated."))
+               (docset:entry-section with-widget "Arguments and Values"))
+           (is equal '((:p "Binds " (:param "var") " to a widget from " (:ref "function/make-widget" "make-widget") " around "
+                        (:param "body") ".")
+                       (:p "It is pushed on " (:ref "variable/*widgets*" "*widgets*") "."))
+               (docset:entry-section with-widget "Description"))
+           (is equal '((:code-block "lisp" "(with-widget (w) w) ⇒ #<WIDGET>")) (docset:entry-section with-widget "Examples"))
+           (is equal '((:p (:ref "function/make-widget" "make-widget"))) (docset:entry-section with-widget "See Also"))
+           ;; An empty Description is the docstring's, before the Examples
+           (is equal '("Syntax" "Description" "Examples") (mapcar #'car (getf (cddr make-widget) :sections)))
+           (is equal '((:p "Makes a " (:ref "class/widget" "widget") ".")) (docset:entry-section make-widget "Description")))
+      (uiop:delete-directory-tree dir :validate t :if-does-not-exist :ignore))))
