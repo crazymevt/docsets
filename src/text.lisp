@@ -41,8 +41,18 @@ when it is just a word."
        (notany #'lower-case-p word)
        (alpha-char-p (find-if-not (lambda (c) (find c "*+%&:")) word))))
 
+(defun emacs-quote-end (text start)
+  "Where the quote closing `name' (Emacs's style) that opens at START is, if it is one."
+  (let ((quote (position #\' text :start (1+ start)))
+        (backquote (position #\` text :start (1+ start))))
+    (and quote (> quote (1+ start))
+         (or (null backquote) (< quote backquote))
+         (notany (lambda (c) (member c '(#\Space #\Tab #\Newline))) (subseq text (1+ start) quote))
+         quote)))
+
 (defun text-inlines (text)
-  "TEXT, a line of prose, as inlines: `code`, and uppercase symbol names."
+  "TEXT, a line of prose, as inlines: `code` (or `code' as Emacs writes it), and
+uppercase symbol names."
   (let ((out '()) (plain (make-string-output-stream)) (i 0) (n (length text)))
     (flet ((flush ()
              (let ((s (get-output-stream-string plain)))
@@ -52,8 +62,8 @@ when it is just a word."
                      (push s out))))))
       (loop while (< i n)
             do (let ((c (char text i)))
-                 (cond ((and (char= c #\`) (position #\` text :start (1+ i)))
-                        (let ((end (position #\` text :start (1+ i))))
+                 (cond ((and (char= c #\`) (or (emacs-quote-end text i) (position #\` text :start (1+ i))))
+                        (let ((end (or (emacs-quote-end text i) (position #\` text :start (1+ i)))))
                           (flush)
                           (let* ((code (subseq text (1+ i) end))
                                  (param (find (string-downcase code) *params* :test #'string=)))

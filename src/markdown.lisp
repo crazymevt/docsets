@@ -12,6 +12,9 @@
 (defvar *page-links* (make-hash-table :test 'equal)
   "A page's file name without its type -> the id of its entry, for relative links.")
 
+(defvar *link-definitions* (make-hash-table :test 'equalp)
+  "Reference-style link labels -> URLs, from a page's [label]: url lines.")
+
 (defvar *self-id* nil
   "The id of the entry being written, for links to \".\".")
 
@@ -76,6 +79,22 @@ kind is the words with lowercase letters; the names are the uppercase rest."
                (setf start (1+ at))
                (return at))))
 
+(defun matching-bracket (string start)
+  "Where the ] closing the [ at START is, counting nested brackets."
+  (loop with depth = 0
+        for i from start below (length string)
+        for c = (char string i)
+        do (cond ((and (char= c #\\) (< (1+ i) (length string))) (incf i))
+                 ((char= c #\[) (incf depth))
+                 ((char= c #\]) (when (zerop (decf depth)) (return i))))))
+
+(defun link-end (string start)
+  "For a link [text](url) at START, the position after its ), or nil."
+  (let ((mid (matching-bracket string start)))
+    (and mid (< (1+ mid) (length string)) (char= (char string (1+ mid)) #\()
+         (let ((close (position #\) string :start mid)))
+           (and close (1+ close))))))
+
 (defun markdown-inlines (string)
   "A line of Markdown as inlines: `code`, **bold**, *italic*, [links](url) and
 backslash escapes. Code naming a parameter of the entry is a :param."
@@ -87,13 +106,18 @@ backslash escapes. Code naming a parameter of the entry is a :param."
             do (let ((c (char string i)))
                  (cond ((and (char= c #\\) (< (1+ i) n))
                         (write-char (char string (1+ i)) plain) (incf i 2))
-                       ((and (char= c #\`) (find-closing string "`" (1+ i)))
-                        (let* ((end (find-closing string "`" (1+ i)))
-                               (code (subseq string (1+ i) end))
+                       ;; `code`, or ```code``` closed by as many backquotes as open it
+                       ((and (char= c #\`)
+                             (let ((run (or (position #\` string :start i :test-not #'char=) n)))
+                               (search (subseq string i run) string :start2 run)))
+                        (let* ((run (or (position #\` string :start i :test-not #'char=) n))
+                               (fence (subseq string i run))
+                               (end (search fence string :start2 run))
+                               (code (subseq string run end))
                                (param (find (string-downcase code) *params* :test #'string=)))
                           (flush)
                           (push (if param (list :param param) (list :code code)) out)
-                          (setf i (1+ end))))
+                          (setf i (+ end (length fence)))))
                        ((and (char= c #\*) (< (1+ i) n) (char= (char string (1+ i)) #\*)
                              (find-closing string "**" (+ i 2)))
                         (let ((end (find-closing string "**" (+ i 2))))
@@ -105,18 +129,36 @@ backslash escapes. Code naming a parameter of the entry is a :param."
                           (flush)
                           (push (cons :i (markdown-inlines (subseq string (1+ i) end))) out)
                           (setf i (1+ end))))
-                       ((and (char= c #\[) (find-closing string "](" (1+ i)))
-                        (let* ((mid (find-closing string "](" (1+ i)))
-                               (end (position #\) string :start mid)))
-                          (if (null end)
-                              (progn (write-char c plain) (incf i))
-                              (let ((text (markdown-inlines (subseq string (1+ i) mid)))
-                                    (target (link-target (subseq string (+ mid 2) end))))
-                                (flush)
-                                (if target
-                                    (push (append target text) out)
-                                    (setf out (append (reverse text) out)))
-                                (setf i (1+ end))))))
+                       ;; ![image](url): a text docset has no use for it
+                       ((and (char= c #\!) (< (1+ i) n) (char= (char string (1+ i)) #\[)
+                             (link-end string (1+ i)))
+                        (setf i (link-end string (1+ i))))
+                       ;; [text][label], with the label's URL defined on a line of its own
+                       ((and (char= c #\[) (matching-bracket string i)
+                             (let ((mid (matching-bracket string i)))
+                               (and (< (1+ mid) n) (char= (char string (1+ mid)) #\[)
+                                    (matching-bracket string (1+ mid)))))
+                        (let* ((mid (matching-bracket string i))
+                               (end (matching-bracket string (1+ mid)))
+                               (label (subseq string (+ mid 2) end))
+                               (url (gethash (if (string= label "") (subseq string (1+ i) mid) label)
+                                             *link-definitions*))
+                               (text (markdown-inlines (subseq string (1+ i) mid))))
+                          (flush)
+                          (if url
+                              (push (append (list :link url) text) out)
+                              (setf out (append (reverse text) out)))
+                          (setf i (1+ end))))
+                       ((and (char= c #\[) (link-end string i))
+                        (let* ((mid (matching-bracket string i))
+                               (end (link-end string i))
+                               (text (markdown-inlines (subseq string (1+ i) mid)))
+                               (target (link-target (subseq string (+ mid 2) (1- end)))))
+                          (flush)
+                          (cond ((null text))
+                                (target (push (append target text) out))
+                                (t (setf out (append (reverse text) out))))
+                          (setf i end)))
                        (t (write-char c plain) (incf i)))))
       (flush))
     (nreverse out)))
@@ -137,15 +179,51 @@ backslash escapes. Code naming a parameter of the entry is a :param."
   (let ((n (or (position #\# line :test-not #'char=) 0)))
     (and (plusp n) (< n (length line)) (char= (char line n) #\Space) n)))
 
+(defun comment-line-p (line)
+  "Whether LINE is an HTML comment, <!-- ... -->, and nothing else."
+  (let ((line (string-trim " " line)))
+    (and (>= (length line) 7)
+         (string= "<!--" line :end2 4)
+         (string= "-->" line :start2 (- (length line) 3)))))
+
+(defun link-definition (line)
+  "For a line \"[label]: url\", the label and the URL."
+  (let ((line (string-trim " " line)))
+    (when (and (plusp (length line)) (char= (char line 0) #\[))
+      (let ((close (position #\] line)))
+        (when (and close (< (1+ close) (length line)) (char= (char line (1+ close)) #\:))
+          (values (subseq line 1 close)
+                  (string-trim " <>" (subseq line (+ close 2) (or (position #\Space line :start (+ close 3)) (length line))))))))))
+
+(defun trim-inlines (inlines)
+  "INLINES without the spaces at their ends that dropped images leave."
+  (let ((inlines (copy-list inlines)))
+    (when (stringp (first inlines))
+      (setf (first inlines) (string-left-trim " " (first inlines))))
+    (let ((last (last inlines)))
+      (when (stringp (car last))
+        (setf (car last) (string-right-trim " " (car last)))))
+    (remove "" inlines :test #'equal)))
+
 (defun markdown-blocks (lines)
   "LINES of Markdown as blocks: paragraphs (one per hard line break), \"- \"
 lists, fenced code, and headings. Headings that are only a link, as the index
 pages of a dictionary are written, become a list of links."
-  (let ((blocks '()) (paragraph '()) (items '()) (item nil) (code nil) (in-code nil))
+  (let ((blocks '()) (paragraph '()) (items '()) (item nil) (code nil) (in-code nil)
+        (*link-definitions* (make-hash-table :test 'equalp)))
+    ;; Reference-style links' URLs, wherever on the page they're defined
+    (let ((fenced nil))
+      (dolist (line lines)
+        (if (and (>= (length line) 3) (string= "```" line :end2 3) (not (search "```" line :start2 3)))
+            (setf fenced (not fenced))
+            (unless fenced
+              (multiple-value-bind (label url) (link-definition line)
+                (when label (setf (gethash label *link-definitions*) url)))))))
     (labels ((end-paragraph ()
                (when paragraph
                  (dolist (group (hard-break-groups (reverse paragraph)))
-                   (push (cons :p (markdown-inlines (join-lines group))) blocks))
+                   (let ((inlines (trim-inlines (markdown-inlines (join-lines group)))))
+                     (when inlines (push (cons :p inlines) blocks))))
                  (setf paragraph '())))
              (end-item ()
                (when item
@@ -158,7 +236,8 @@ pages of a dictionary are written, become a list of links."
                  (setf items '())))
              (end-all () (end-paragraph) (end-list)))
       (dolist (line lines)
-        (cond (in-code
+        (cond ((and (not in-code) (or (comment-line-p line) (link-definition line))))
+              (in-code
                (if (string= (string-trim " " line) "```")
                    (progn (push (list :code-block "lisp"
                                       (string-right-trim '(#\Newline #\Space)
@@ -166,7 +245,8 @@ pages of a dictionary are written, become a list of links."
                                 blocks)
                           (setf in-code nil code '()))
                    (push line code)))
-              ((and (>= (length line) 3) (string= "```" line :end2 3))
+              ;; A fence opens a line of its own; ```code``` on one line is inline code
+              ((and (>= (length line) 3) (string= "```" line :end2 3) (not (search "```" line :start2 3)))
                (end-all) (setf in-code t code '()))
               ((heading-level line)
                (let* ((level (heading-level line))
@@ -184,6 +264,16 @@ pages of a dictionary are written, become a list of links."
               (t (end-list) (push line paragraph))))
       (end-all)
       (merge-lists (reverse blocks)))))
+
+;;; READMEs
+
+(defun readme-blocks (pathname)
+  "The README in PATHNAME as blocks, without its title (its first # heading)."
+  (let* ((lines (with-open-file (in pathname :external-format :utf-8)
+                  (loop for line = (read-line in nil) while line
+                        collect (string-right-trim '(#\Return) line))))
+         (title (position-if (lambda (l) (eql (heading-level l) 1)) lines)))
+    (markdown-blocks (if title (append (subseq lines 0 title) (subseq lines (1+ title))) lines))))
 
 ;;; Sections of a definition's page
 

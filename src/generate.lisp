@@ -10,12 +10,12 @@
 ;;; Libraries
 
 (defstruct library
-  id system title subtitle source license attribution packages)
+  id system title subtitle source license attribution packages readme)
 
 (defvar *libraries* (make-hash-table :test 'equal)
   "Library id -> its LIBRARY, as libraries/*.lisp define them.")
 
-(defmacro define-library (id &key system title subtitle source license attribution packages)
+(defmacro define-library (id &key system title subtitle source license attribution packages readme)
   "Defines how to document the library ID. PACKAGES lists the packages to
 document, each a name or (name &key nicknames prefix pages toc-title see-also
 group-by-home-package):
@@ -26,11 +26,13 @@ its part of the contents; SEE-ALSO names a package whose entries of the same
 name each entry links to; GROUP-BY-HOME-PACKAGE groups the contents by the
 package each symbol comes from, for a package that re-exports others (UIOP).
 A symbol another of the packages exports from its own home is documented
-there, not again."
+there, not again. README, a Markdown file relative to the system's directory,
+becomes an Overview page at the top of the contents, for a library whose
+README documents more than its docstrings do."
   `(setf (gethash ,id *libraries*)
          (make-library :id ,id :system ,(or system id) :title ,(or title id) :subtitle ,subtitle
                        :source ,source :license ,license :attribution ,attribution
-                       :packages ',packages)))
+                       :packages ',packages :readme ,readme)))
 
 (defun libraries-directory ()
   (asdf:system-relative-pathname "docsets" "libraries/"))
@@ -262,6 +264,22 @@ by default ~/.local/share/docsets/ID/. Returns the directory."
             (if (rest specs)
                 (push (list :title (or (package-option spec :toc-title) name) :children nodes) toc)
                 (setf toc nodes)))))
+      (setf toc (if (rest specs) (reverse toc) toc))
+      (let ((readme (library-readme library)))
+        (when readme
+          (let* ((*link-names* (or (gethash (package-spec-name (first specs)) package-links)
+                                   (make-hash-table :test 'equal)))
+                 (*page-links* (make-hash-table :test 'equal))
+                 (*params* '())
+                 (*self-id* "page/readme")
+                 (blocks (readme-blocks (merge-pathnames readme source-directory))))
+            ;; ENTRIES is reversed below: the overview goes first
+            (setf entries (append entries
+                                  (list (list* :entry *self-id* :names (list "Overview") :kind :page
+                                               :kind-name "Overview"
+                                               (append (let ((s (summary blocks))) (when s (list :summary s)))
+                                                       (list :sections (list (cons "" blocks))))))))
+            (push (list :title "Overview" :entry *self-id*) toc))))
       (docset:write-docset
        output-directory
        (list :id (library-id library)
@@ -274,7 +292,7 @@ by default ~/.local/share/docsets/ID/. Returns the directory."
              :source (library-source library)
              :attribution (library-attribution library)
              :license (library-license library)
-             :toc (if (rest specs) (reverse toc) toc))
+             :toc toc)
        (reverse entries)))))
 
 (defun generate-all ()

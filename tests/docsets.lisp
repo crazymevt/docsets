@@ -155,3 +155,24 @@
                 (:title "docsets-test-widgets" :children ((:title "Functions" :children ((:title "frob" :entry "function/frob")
                                                                                          (:title "make-widget" :entry "function/make-widget"))))))
         toc)))
+
+(define-test readme-markdown
+  :parent docsets/tests
+  (let ((docsets::*page-links* (make-hash-table :test 'equal))
+        (docsets::*link-names* (make-hash-table :test 'equal))
+        (docsets::*params* '()))
+    ;; Badges (an image inside a link) are dropped; links around text stay
+    (is equal '((:p "Docs " (:link "http://d" "here")))
+        (docsets:markdown-blocks '("[![Build](http://b.svg)](http://ci) Docs [here](http://d)")))
+    (is equal '((:p "b")) (docsets:markdown-blocks '("[![Build](http://b.svg)](http://ci)" "" "b")))
+    (is equal '("set " (:code "dex:*proxy*") " first") (docsets:markdown-inlines "set ```dex:*proxy*``` first"))
+    ;; Reference-style links, defined on a line of their own anywhere
+    (is equal '((:p "A " (:link "https://r" "RFC") " reader.") (:p "b"))
+        (docsets:markdown-blocks '("A [RFC][rfc] reader." "" "[RFC]: https://r" "" "b")))
+    ;; A line with ``` at both ends is a paragraph, not a fence; comments vanish
+    (is equal '((:p "a " (:code "x")) (:p "b"))
+        (docsets:markdown-blocks '("a ```x```" "<!-- - `force-string` -->" "" "b"))))
+  ;; Docstrings quoting `like this' (Emacs's style)
+  (let ((docsets::*params* '("in")) (docsets::*link-names* (make-hash-table :test 'equal)))
+    (is equal '((:p "Reads " (:param "in") ", or a " (:code "span") "; don't use " (:code "quotes") " here."))
+        (docsets:docstring-blocks "Reads `in', or a `span'; don't use `quotes` here."))))
