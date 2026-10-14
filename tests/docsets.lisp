@@ -250,3 +250,47 @@
            (is equal '("Syntax" "Description" "Examples") (mapcar #'car (getf (cddr make-widget) :sections)))
            (is equal '((:p "Makes a " (:ref "class/widget" "widget") ".")) (docset:entry-section make-widget "Description")))
       (uiop:delete-directory-tree dir :validate t :if-does-not-exist :ignore))))
+
+(defun rewrite-manifest (dir function)
+  "Rewrites DIR's manifest as FUNCTION returns it, given the manifest."
+  (let* ((file (merge-pathnames "manifest.sexp" dir))
+         (manifest (with-open-file (in file) (let ((*package* (find-package :keyword))) (read in)))))
+    (with-open-file (out file :direction :output :if-exists :supersede)
+      (with-standard-io-syntax (prin1 (funcall function manifest) out)))))
+
+(define-test versions
+  :parent docsets/tests
+  (is equal "dexador-20260101-git"
+      (docsets::quicklisp-release #p"/home/q/quicklisp/dists/quicklisp/software/dexador-20260101-git/"))
+  (is equal "jzon-v1.1.4"
+      (docsets::quicklisp-release #p"/home/q/quicklisp/dists/quicklisp/software/jzon-v1.1.4/src/"))
+  (false (docsets::quicklisp-release #p"/home/q/projects/lisp/gtk4/"))
+  (false (docsets:library-release "no-such-system-anywhere"))
+  ;; The fingerprint follows the library's definition file
+  (let ((a (merge-pathnames "tests/pages/_index.md" (asdf:system-source-directory "docsets")))
+        (b (merge-pathnames "tests/readme.md" (asdf:system-source-directory "docsets"))))
+    (is equal (docsets:generator-fingerprint (docsets::make-library :file a))
+        (docsets:generator-fingerprint (docsets::make-library :file a)))
+    (isnt equal (docsets:generator-fingerprint (docsets::make-library :file a))
+          (docsets:generator-fingerprint (docsets::make-library :file b))))
+  ;; A docset is current when made, and out of date when what it records differs
+  (eval '(docsets:define-library "docsets-test-versions" :system "docsets/tests"
+          :packages ("DOCSETS-TEST-GADGETS")))
+  (let* ((root (merge-pathnames (format nil "docsets-test-~D/" (random 1000000 (make-random-state t)))
+                                (uiop:temporary-directory)))
+         (dir (merge-pathnames "docsets-test-versions/" root)))
+    (unwind-protect
+         (flet ((status () (getf (docsets:docset-status dir) :status)))
+           (docsets:generate "docsets-test-versions" :output-directory dir)
+           (is eq :current (status))
+           (rewrite-manifest dir (lambda (m) (setf (getf m :generator) "0000000000000000") m))
+           (is eq :generator-changed (status))
+           (rewrite-manifest dir (lambda (m) (setf (getf m :release) "docsets-old") m))
+           (is eq :library-changed (status))
+           (rewrite-manifest dir (lambda (m) (remf m :release) m))
+           (is eq :unrecorded (status))
+           (is = 1 (docsets:report-outdated :directory root :stream (make-broadcast-stream)))
+           (is equal (list (truename dir)) (mapcar #'truename (docsets:update :directory root)))
+           (is eq :current (status))
+           (is = 0 (docsets:report-outdated :directory root :stream (make-broadcast-stream))))
+      (uiop:delete-directory-tree root :validate t :if-does-not-exist :ignore))))

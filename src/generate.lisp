@@ -10,7 +10,8 @@
 ;;; Libraries
 
 (defstruct library
-  id system title subtitle source license attribution packages readme texinfo)
+  id system title subtitle source license attribution packages readme texinfo
+  file)                                 ; the libraries/ file that defines it, if one does
 
 (defvar *libraries* (make-hash-table :test 'equal)
   "Library id -> its LIBRARY, as libraries/*.lisp define them.")
@@ -35,7 +36,8 @@ contents, as its chapters and sections."
   `(setf (gethash ,id *libraries*)
          (make-library :id ,id :system ,(or system id) :title ,(or title id) :subtitle ,subtitle
                        :source ,source :license ,license :attribution ,attribution
-                       :packages ',packages :readme ,readme :texinfo ,texinfo)))
+                       :packages ',packages :readme ,readme :texinfo ,texinfo
+                       :file *load-truename*)))
 
 (defun libraries-directory ()
   (asdf:system-relative-pathname "docsets" "libraries/"))
@@ -305,6 +307,9 @@ by default ~/.local/share/docsets/ID/. Returns the directory."
              :title (library-title library)
              :subtitle (library-subtitle library)
              :version (asdf:component-version (asdf:find-system system))
+             ;; What it was made from, for make outdated (versions.lisp)
+             :release (library-release system)
+             :generator (generator-fingerprint library)
              :system system
              :packages (reverse packages)
              :nicknames (reverse nicknames)

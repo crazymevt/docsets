@@ -13,7 +13,8 @@
                              (:file "symbols")
                              (:file "markdown")
                              (:file "generate")
-                             (:file "texinfo"))))
+                             (:file "texinfo")
+                             (:file "versions"))))
   :in-order-to ((test-op (test-op "docsets/tests"))))
 
 (defsystem "docsets/tests"

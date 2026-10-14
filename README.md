@@ -110,9 +110,28 @@ documented once, under the package it comes from.
 
 The system defaults to the library's name; pass `:system` if it differs.
 
+## Keeping them up to date
+
+Each docset records what it was made from: the library's release (its
+Quicklisp release, such as `dexador-20260101-git`, or its git commit) and a
+fingerprint of the generator, the docset library and the library's file in
+`libraries/`. `make outdated` compares those with what's installed now:
+
+```
+alexandria           up to date (alexandria-20241012-git)
+dexador              out of date: dexador-20260301-git is installed, made from dexador-20260101-git
+uiop                 out of date: the generator has changed
+```
+
+`make update` regenerates the ones that are out of date. Nothing is
+downloaded: get newer libraries with `(ql:update-dist "quicklisp")` when you
+choose, then run `make update`.
+
 ## Make targets
 
 - `make docset LIBRARY=...` writes and checks one docset.
 - `make all` writes and checks every library in `libraries/`.
+- `make outdated` says which docsets are out of date, and why.
+- `make update` regenerates and checks the ones that are.
 - `make check` checks every docset in `~/.local/share/docsets/`.
 - `make test` runs the tests.
