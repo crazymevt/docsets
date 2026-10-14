@@ -1,13 +1,13 @@
 # docsets
 
 Writes [docsets](https://github.com/crazymevt/docset/blob/main/docs/format.md)
-of Lisp libraries, for the spec browser and
+of Lisp libraries, for [spec-browser](https://github.com/crazymevt/spec-browser) and
 [Cadre](https://github.com/crazymevt/cadre-editor)'s HyperSpec tab. A docset is written to
 `~/.local/share/docsets/<library>/`, where both look for them.
 
 This is for libraries whose authors don't ship a docset. A library you
-maintain can build its own into its `docs/docset/` instead, as gtk4 and
-raylib do.
+maintain can build its own into its `docs/docset/` instead, as [gtk4](https://github.com/crazymevt/gtk4) and
+[raylib](https://github.com/crazymevt/raylib) do.
 
 ## Setup
 
