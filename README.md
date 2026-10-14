@@ -1,12 +1,32 @@
 # docsets
 
-Writes [docsets](../docset/docs/format.md) of Lisp libraries, for the spec
-browser and Cadre's HyperSpec tab. A docset is written to
+Writes [docsets](https://github.com/crazymevt/docset/blob/main/docs/format.md)
+of Lisp libraries, for the spec browser and
+[Cadre](https://github.com/crazymevt/cadre-editor)'s HyperSpec tab. A docset is written to
 `~/.local/share/docsets/<library>/`, where both look for them.
 
 This is for libraries whose authors don't ship a docset. A library you
 maintain can build its own into its `docs/docset/` instead, as gtk4 and
 raylib do.
+
+## Setup
+
+You need SBCL with [Quicklisp](https://www.quicklisp.org), and the
+[docset library](https://github.com/crazymevt/docset), which isn't in
+Quicklisp's dist. Check out both repos and link the library where Quicklisp
+finds local projects:
+
+```sh
+cd ~/projects/lisp
+git clone https://github.com/crazymevt/docset.git
+git clone https://github.com/crazymevt/docsets.git
+ln -s ~/projects/lisp/docset ~/quicklisp/local-projects/docset
+cd docsets
+```
+
+If Quicklisp doesn't see a new link, run `(ql:register-local-projects)` once.
+Quicklisp fetches the libraries you document; for one that isn't in its dist,
+put that in `~/quicklisp/local-projects/` too.
 
 ## Making one
 
