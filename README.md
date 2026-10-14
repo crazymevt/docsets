@@ -45,6 +45,9 @@ It loads the library with Quicklisp, writes the docset, and checks it.
 | `plump` | Docstrings, grouped by plump-dom, plump-parser and plump-lexer, and its README as the overview |
 | `jzon` | Docstrings, and its README (its manual) as the overview; also found as `jzon:` |
 | `dexador` | Its README as the overview, which documents the request functions; docstrings, which few symbols have |
+| `parachute` | Docstrings, and its README (a guide to writing tests) as the overview |
+| `cffi` | Docstrings, which a third of its symbols lack, and its README. Its full reference is a Texinfo manual this doesn't read yet |
+| `cl-ppcre` | Docstrings, complete; also found as `ppcre:` |
 
 Any library works, even with no file in `libraries/`. It's documented from
 the docstrings and lambda lists of the external symbols of the package with
@@ -92,7 +95,8 @@ Per package:
 
 For the library, `:readme` names a Markdown file (relative to the system's
 directory) to show as an Overview page, for a library whose README documents
-more than its docstrings do.
+more than its docstrings do. Its first `#` heading is left out when it names
+the library, as a title does.
 
 A symbol that one of the library's packages re-exports from another is
 documented once, under the package it comes from.

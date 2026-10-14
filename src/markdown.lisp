@@ -267,12 +267,17 @@ pages of a dictionary are written, become a list of links."
 
 ;;; READMEs
 
-(defun readme-blocks (pathname)
-  "The README in PATHNAME as blocks, without its title (its first # heading)."
+(defun readme-blocks (pathname &optional names)
+  "The README in PATHNAME as blocks, without its title: its first # heading,
+when that names the library (it contains one of NAMES). Some READMEs have no
+title and use # for their sections."
   (let* ((lines (with-open-file (in pathname :external-format :utf-8)
                   (loop for line = (read-line in nil) while line
                         collect (string-right-trim '(#\Return) line))))
-         (title (position-if (lambda (l) (eql (heading-level l) 1)) lines)))
+         (first (position-if (lambda (l) (eql (heading-level l) 1)) lines))
+         (title (and first
+                     (some (lambda (name) (search name (nth first lines) :test #'char-equal)) names)
+                     first)))
     (markdown-blocks (if title (append (subseq lines 0 title) (subseq lines (1+ title))) lines))))
 
 ;;; Sections of a definition's page

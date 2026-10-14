@@ -272,7 +272,8 @@ by default ~/.local/share/docsets/ID/. Returns the directory."
                  (*page-links* (make-hash-table :test 'equal))
                  (*params* '())
                  (*self-id* "page/readme")
-                 (blocks (readme-blocks (merge-pathnames readme source-directory))))
+                 (blocks (readme-blocks (merge-pathnames readme source-directory)
+                                        (list (library-id library) (library-title library)))))
             ;; ENTRIES is reversed below: the overview goes first
             (setf entries (append entries
                                   (list (list* :entry *self-id* :names (list "Overview") :kind :page
